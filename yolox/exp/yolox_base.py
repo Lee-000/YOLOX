@@ -9,6 +9,13 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 
+import sys
+sys.path.insert(0, "/home/yexuan/tensorbay-python-sdk")
+from tensorbay import GAS
+from tensorbay.client import config
+
+config.is_internal = True
+
 from .base_exp import BaseExp
 
 
@@ -23,7 +30,8 @@ class Exp(BaseExp):
 
         # ---------------- dataloader config ---------------- #
         # set worker to 4 for shorter dataloader init time
-        self.data_num_workers = 4
+        # self.data_num_workers = 4
+        self.data_num_workers = 6
         self.input_size = (640, 640)  # (height, width)
         # Actual multiscale ranges: [640-5*32, 640+5*32].
         # To disable multiscale training, set the
@@ -69,6 +77,9 @@ class Exp(BaseExp):
         self.test_conf = 0.01
         self.nmsthre = 0.65
 
+        with open(".gasconfig", "r") as fp:
+            self.gas = GAS(fp.read().strip())
+
     def get_model(self):
         from yolox.models import YOLOX, YOLOPAFPN, YOLOXHead
 
@@ -110,13 +121,13 @@ class Exp(BaseExp):
         with wait_for_the_master(local_rank):
             dataset = COCODataset(
                 data_dir=self.data_dir,
-                json_file=self.train_ann,
                 img_size=self.input_size,
                 preproc=TrainTransform(
                     max_labels=50,
                     flip_prob=self.flip_prob,
                     hsv_prob=self.hsv_prob),
                 cache=cache_img,
+                gas=self.gas,
             )
 
         dataset = MosaicDetection(
@@ -240,13 +251,13 @@ class Exp(BaseExp):
 
     def get_eval_loader(self, batch_size, is_distributed, testdev=False, legacy=False):
         from yolox.data import COCODataset, ValTransform
-
         valdataset = COCODataset(
             data_dir=self.data_dir,
-            json_file=self.val_ann if not testdev else "image_info_test-dev2017.json",
-            name="val2017" if not testdev else "test2017",
+            # name="val" if not testdev else "test",
+            name="val",
             img_size=self.test_size,
             preproc=ValTransform(legacy=legacy),
+            gas=self.gas,
         )
 
         if is_distributed:
